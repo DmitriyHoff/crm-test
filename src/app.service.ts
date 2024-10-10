@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
-
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { InstanceAxios } from './axiosInstance';
+import { Response } from 'express';
 interface BaseTag {
     /** ID тега для добавления. Важно передать или id или name. */
     id?: number;
@@ -138,24 +139,49 @@ export interface Company {
     request_id?: string;
 }
 
+export enum EntityType {
+    Leads = 'leads',
+    Companies = 'companies',
+    Contacts = 'contacts'
+}
+
 @Injectable()
 export class AppService {
     getHello(): string {
         return 'Hello!';
     }
 
-    createLead(lead: Lead): string {
-        console.log({ lead });
-        return 'lead created!';
-    }
+    async createEntity(type: EntityType, res: Response, entities: Array<Lead|Company|Contact>) {
+        try {
+            const url = `/api/v4/${type}`;
 
-    createContact(contact: Contact): string {
-        console.log({ contact });
-        return 'contact created!';
-    }
+            // отправляем полученные сделки
+            const response = await InstanceAxios.instance.post(url, entities);
 
-    createCompany(company: Company): string {
-        console.log({ company });
-        return 'company created!';
+            // полученный статус устанавливаем как статус ответа
+            res.status(response.status)
+            if(response.status === 200) {
+                // если статус 200 возвращаем только идентификаторы
+                const { [type]:entities } = response.data?._embedded || {}
+                return entities.map((item: { id: number; }) => item.id);
+            } else {
+                // в остальных случаях данные полностью
+                return response.data;
+            }
+        } catch (error) {
+            // в случае, если статус не 2ХХ
+            if(error.response) {
+                // полученный статус устанавливаем как статус ответа
+                // и отправляем полученные данные
+                res.status(error.response.status)
+                return error.response.data;
+            }
+            // в остальных случаях отправим статус 500
+            console.log(error);
+            throw new HttpException(
+                'Internal Server error',
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
     }
 }
